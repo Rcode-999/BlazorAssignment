@@ -1,0 +1,359 @@
+﻿@page "/"
+@using System.IO
+@using System.Text
+
+<PageTitle>Operations List</PageTitle>
+<div class="d-flex justify-content-between p-2"><h1>Operations</h1><Button Color="ButtonColor.Primary" @onclick="OnShowModalClick">Add Operation</Button></div>
+
+
+<div class="border" style="padding: 20px; margin-top: 20px;">
+	<div style="display: flex; flex-direction: column;">
+		<Grid @ref="grid"
+				TItem="Operation"
+				Class="table table-hover table-bordered"
+				DataProvider="OperationsDataProvider"
+				FixedHeader="true"
+				Responsive="true"
+				Unit="Unit.Px">
+			<GridColumns>
+				<GridColumn TItem="Operation" HeaderText="Image" PropertyName="ImageData">
+					
+					@if(context.ImageData != null)
+					{
+						<img style='display:block; width:60px;height:60px;' src="@($"data:image;base64,{Convert.ToBase64String(context.ImageData)}")" />
+					}
+				</GridColumn>
+				<GridColumn TItem="Operation" HeaderText="Operation ID" PropertyName="OperationID">
+					@context.OperationID
+				</GridColumn>
+				<GridColumn TItem="Operation" HeaderText="Operation Name" PropertyName="Name">
+					@context.Name
+				</GridColumn>
+				<GridColumn TItem="Operation" HeaderText="Operation Order No." PropertyName="OrderInWhichToPerform">
+					@context.OrderInWhichToPerform
+				</GridColumn>
+				<GridColumn TItem="Operation" HeaderText="Device Name" PropertyName="Name">
+					@if(context.Device != null)
+					{
+						<p>@context.Device.Name</p>
+					}
+					else
+					{
+						<p>No Device</p>
+					}
+				</GridColumn>
+				<GridColumn TItem="Operation" HeaderText="Actions">
+					<Button Color="ButtonColor.Danger" @onclick="() => OnDeleteOperation(context.OperationID)">
+						Delete
+					</Button>
+					<Button Color="ButtonColor.Primary" @onclick="() => OnDeviceAdd(context.OperationID)">
+						Add Device
+					</Button>
+				</GridColumn>
+				
+			</GridColumns>
+		</Grid>
+	</div>
+</div>
+
+
+@* Operation Modal *@
+<Modal @ref="opAddModal" 
+	Title="Operation Details" 
+	UseStaticBackdrop="true" 
+	CloseOnEscape="false" 
+	IsVerticallyCentered="true" 
+	Size="ModalSize.Large">
+	<BodyTemplate>
+		<div class="mb-3">
+			<label class="form-label">Operation ID</label>
+			<NumberInput TValue="int?" @bind-Value="@operationID" Placeholder="Enter Operation Id" @oninput="() => validationOpError = null" />
+		</div>
+		<div class="mb-3">
+			<label class="form-label">Operation Name</label>
+			<TextInput @bind-Value="@operationName" Placeholder="Scan Item..." @oninput="() => validationOpError = null" />
+		</div>
+		<div class="mb-3">
+			<label class="form-label">Operation Order Number</label>
+			<NumberInput TValue="int?" @bind-Value="@operationOrderNo" Placeholder="Enter Operation Order Number" @oninput="() => validationOpError = null" />
+		</div>
+		<div>
+			<InputFile OnChange="@UploadImage" accept="image/png" />
+		</div>
+		@if (!string.IsNullOrEmpty(validationOpError))
+		{
+			<div class="alert alert-danger mt-1">
+				@validationOpError
+			</div>
+		}
+
+	</BodyTemplate>
+	<FooterTemplate>
+		<Button Color="ButtonColor.Secondary" @onclick="OnHideModalClick">Cancel</Button>
+		<Button Color="ButtonColor.Primary"
+				@onclick="OnSaveOperation"
+				Disabled="@(
+				operationID == null ||
+				string.IsNullOrWhiteSpace(operationName) ||
+				operationOrderNo == null
+                )">
+			Save Operation</Button>
+	</FooterTemplate>
+</Modal>
+
+@* Device Modal *@
+<Modal @ref="deviceAddModal"
+	   Title="Device Details"
+	   UseStaticBackdrop="true"
+	   CloseOnEscape="false"
+	   IsVerticallyCentered="true"
+	   Size="ModalSize.Large">
+	<BodyTemplate>
+		<div class="mb-3">
+			<label class="form-label">Device ID</label>
+			<NumberInput TValue="int?" @bind-Value="@deviceId" Placeholder="Enter device Id..." />
+		</div>
+		<div class="mb-3">
+			<label class="form-label">Device Name</label>
+			<TextInput @bind-Value="@deviceName" Placeholder="Enter device name..." />
+		</div>
+		<div class="mb-3">
+			<label class="form-label">Device Type</label>
+			<InputSelect @bind-Value="@devType" class="form-select py-2 px-2">
+				@foreach(var devType in (DeviceType[])Enum.GetValues(typeof(DeviceType)))
+				{
+					<option value="@devType">@devType</option>
+				}
+			</InputSelect>
+		</div>
+		@if (!string.IsNullOrEmpty(validationDevError))
+		{
+			<div class="alert alert-danger mt-1">
+				@validationDevError
+			</div>
+		}
+	</BodyTemplate>
+	<FooterTemplate>
+		<Button Color="ButtonColor.Secondary" @onclick="OnHideDeviceModalClick">Cancel</Button>
+		<Button Color="ButtonColor.Primary" 
+		@onclick="OnSaveDevice"
+		Disabled="@(
+		deviceId == null ||
+		string.IsNullOrWhiteSpace(deviceName))">
+			Save Device
+		</Button>
+	</FooterTemplate>
+</Modal>
+
+@code{
+	//Operations list initialization
+	private IList<Operation> Operations { get; set; } = new List<Operation>();
+	protected override void OnInitialized()
+	{
+		Operations.Add(new Operation(1, "Scan", 5));
+		Operations.Add(new Operation(2, "Capture", 6));
+	}
+
+	private IList<Operation> GetOperations()
+	{
+		return Operations;
+	}
+
+	//Modal Operation variables
+	private Modal opAddModal;
+	private int? operationID;
+	private string? operationName = null;
+	private int? operationOrderNo;
+	private byte[]? imageData;
+	private string? validationOpError;
+
+	private async Task OnShowModalClick()
+	{
+		await opAddModal?.ShowAsync();
+	}
+
+	private async Task OnHideModalClick()
+	{
+		await opAddModal?.HideAsync();
+	}
+
+	private async Task OnSaveOperation()
+	{
+		validationOpError = null;
+		if (operationID == null)
+		{
+			validationOpError = "Operation ID is required.";
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(operationName))
+		{
+			validationOpError = "Operation Name is required.";
+			return;
+		}
+
+		if (operationOrderNo == null)
+		{
+			validationOpError = "Operation Order Number is required.";
+			return;
+		}
+		if (Operations.Any(o => o.OperationID == operationID))
+		{
+			validationOpError = "Operation ID already exists.";
+			return;
+		}
+
+		if (Operations.Any(o => o.OrderInWhichToPerform == operationOrderNo))
+		{
+			validationOpError = "Operation Order Number already exists.";
+			return;
+		}
+
+		Operation newOperation = new Operation(operationID ?? 0, operationName, operationOrderNo ?? 0);
+
+		if (imageData != null)
+			newOperation.ImageData = imageData;
+
+		Operations.Add(newOperation);
+		operationID = null;
+		operationName = null;
+		operationOrderNo = null;
+		imageData = null;
+		Operations = Operations.OrderBy(op => op.OrderInWhichToPerform).ToList();
+		await grid.RefreshDataAsync();
+		await opAddModal.HideAsync();
+	}
+
+	private async Task OnDeleteOperation(int id)
+	{
+		var operation = Operations.FirstOrDefault(op => op.OperationID == id);
+
+		if (operation != null)
+		{
+			Operations.Remove(operation);
+		}
+
+		await grid.RefreshDataAsync();
+	}
+
+	private async Task UploadImage(InputFileChangeEventArgs e)
+	{
+		try
+		{
+			using var ms = new MemoryStream();
+			await e.File.OpenReadStream().CopyToAsync(ms);
+			imageData = ms.ToArray();
+		}
+		catch (Exception ex)
+		{
+			System.Console.WriteLine(ex.Message);
+		}
+
+	}
+
+	//Device Add Modal Logic
+	private Modal deviceAddModal;
+	private int? opDeviceId;
+	private int? deviceId;
+	private string? deviceName = null;
+	private DeviceType devType;
+	private string? validationDevError;
+
+	private async Task OnDeviceAdd(int id)
+	{
+		opDeviceId = id;
+		deviceAddModal.ShowAsync();
+	}
+
+	private static bool matchOperation(Operation op, int id)
+	{
+		if (op.OperationID == id)
+			return true;
+		return false;
+	}
+
+	private async Task OnHideDeviceModalClick()
+	{
+		await deviceAddModal?.HideAsync();
+	}
+
+	private async Task OnSaveDevice()
+	{
+		validationDevError = null;
+		var operation = Operations.FirstOrDefault(op => op.OperationID == opDeviceId);
+		if (deviceId == null)
+		{
+			validationOpError = "Device ID is required.";
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(deviceName))
+		{
+			validationOpError = "Device Name is required.";
+			return;
+		}
+		Device newDevice = new Device(deviceId ?? 0, deviceName, devType);
+		if(operation != null)
+		{
+			operation.Device = newDevice;
+		}
+		deviceId = null;
+		deviceName = null;
+		await grid.RefreshDataAsync();
+		await deviceAddModal?.HideAsync();
+	}
+
+	//Displaying operations logic
+	BlazorBootstrap.Grid<Operation> grid = default!;
+
+	private async Task<GridDataProviderResult<Operation>> OperationsDataProvider(GridDataProviderRequest<Operation> request)
+	{
+		if (Operations is null) 
+			Operations = GetOperations(); 
+
+		return await Task.FromResult(request.ApplyTo(Operations));
+	}
+
+
+	//Operations class
+	class Operation
+	{
+		public int OperationID { get; set; }
+		public string Name { get; set; }
+		public int OrderInWhichToPerform { get; set; }
+		public byte[] ImageData { get; set; }
+		public Device Device { get; set; }
+
+		public Operation(int OperationID, string Name, int OrderInWhichToPerform)
+		{
+			this.OperationID = OperationID;
+			this.Name = Name;
+			this.OrderInWhichToPerform = OrderInWhichToPerform;
+		}
+	}
+
+	//Device class
+	class Device
+	{
+		public int DeviceId { get; set; }
+		public string Name { get; set; }
+		public DeviceType deviceType {get; set;}
+
+		public Device(int DeviceId, string Name, DeviceType deviceType)
+		{
+			this.DeviceId = DeviceId;
+			this.Name = Name;
+			this.deviceType = deviceType;
+		}
+	}
+
+	//Device type enum
+	enum DeviceType
+	{
+		BarcodeScanner,
+		Printer,
+		Camera,
+		SocketTray
+	}
+	
+}
